@@ -29,6 +29,8 @@ from pathlib import Path
 import requests
 import yaml
 
+import lc_slack
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
 logger = logging.getLogger(__name__)
 
@@ -201,6 +203,23 @@ def pick_next(mode, delivered):
 
 
 # ---------- format + send ----------
+def format_light(p, delivered, mode):
+    """Light card for bot mode: problem + hint + reveal CTA (solution revealed on emoji)."""
+    e = DIFF_EMOJI.get(p["difficulty"], "⚪")
+    head = f"🧩 *LeetCode {'Daily Challenge' if mode=='daily' else 'Problem of the Day'}*"
+    if mode == "list":
+        head += f"  ·  Blind 75 {len(delivered)+1}/{len(BLIND75)}"
+    lines = [head,
+             f"{e} *#{p['id']} — {p['title']}*  ({p['difficulty']})",
+             f"🏷️ {', '.join(p['tags']) or '-'}",
+             f"🔗 {p['url']}"]
+    oh = p.get("official_hints") or []
+    if oh:
+        lines.append(f"💡 *Hint:* {oh[0]}")
+    lines.append("\n👉 React :bulb: to reveal the thought process, solution, and interviewer mindset.")
+    return "\n".join(lines)
+
+
 def format_msg(p, lens_text, mode, delivered):
     e = DIFF_EMOJI.get(p["difficulty"], "⚪")
     lines = [f"🧩 *LeetCode {'Daily Challenge' if mode=='daily' else 'Problem of the Day'}*\n",
@@ -236,10 +255,15 @@ def main():
     ap.add_argument("--reset", action="store_true")
     ap.add_argument("--validate", action="store_true")
     ap.add_argument("--install-cron", action="store_true")
+    ap.add_argument("--check-slack", action="store_true", help="Diagnose the LeetCode Slack bot")
     args = ap.parse_args()
 
     os.chdir(SCRIPT_DIR)
     cfg = yaml.safe_load(open("config.yaml"))
+    scfg = cfg.get("slack_bot", {})
+
+    if args.check_slack:
+        print(lc_slack.check_slack(scfg)); return
 
     if args.install_cron:
         wrapper = SCRIPT_DIR / "run_daily.sh"
@@ -266,13 +290,20 @@ def main():
             send_slack(cfg.get("slack_webhook_file", ""), msg)
         print(msg); return
 
-    lens_text = "" if (args.no_lens or not cfg.get("include_hint", True)) else interviewer_lens(p)
-    msg = format_msg(p, lens_text, mode, delivered)
-
-    if args.dry_run:
-        print(msg); return
-    if send_slack(cfg.get("slack_webhook_file", ""), msg):
-        logger.info("Sent: #%s %s", p["id"], p["title"])
+    if scfg.get("enabled"):
+        # Bot mode: post a light card to the dedicated channel; solution revealed on emoji.
+        light = format_light(p, delivered, mode)
+        if args.dry_run:
+            print(light); return
+        ok = lc_slack.post_problem(scfg, p, light)
+        logger.info("Posted #%s %s to channel: %s", p["id"], p["title"], "ok" if ok else "FAILED")
+    else:
+        lens_text = "" if (args.no_lens or not cfg.get("include_hint", True)) else interviewer_lens(p)
+        msg = format_msg(p, lens_text, mode, delivered)
+        if args.dry_run:
+            print(msg); return
+        if send_slack(cfg.get("slack_webhook_file", ""), msg):
+            logger.info("Sent: #%s %s", p["id"], p["title"])
     if mode == "list":
         delivered.append(p["slug"]); save_delivered(delivered)
 

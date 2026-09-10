@@ -5,3 +5,12 @@ mode: list
 include_hint: true          # add a no-spoiler approach hint (via kiro-cli, local/free)
 backend: local
 slack_webhook_file: "~/.mcf-daily-improver/slack_webhook"
+
+# Dedicated LeetCode channel + emoji reveal. Reuses the same bot as opportunity-finder.
+# Invite the bot to a new private #leetcode channel; react with 💡 to reveal the walkthrough.
+slack_bot:
+  enabled: false
+  token_file: "~/.opportunity-finder/slack_bot_token"
+  channel_id: ""
+  reveal_emoji: ["bulb", "brain", "eyes", "white_check_mark"]
+  poll_interval: 60
