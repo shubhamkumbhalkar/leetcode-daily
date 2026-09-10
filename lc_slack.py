@@ -10,6 +10,7 @@ import json
 import logging
 import re
 import subprocess
+import time
 from pathlib import Path
 
 import requests
@@ -94,18 +95,44 @@ def _call_kiro(prompt, timeout=150):
         logger.warning("kiro failed: %s", e); return ""
 
 
-def generate_reveal(prob):
+def _split_sections(text):
+    """Split the reveal into labeled sections so each can be its own Slack reply."""
+    labels = [("Thought process", "💭 Thought process"),
+              ("Solution", "✅ Solution"),
+              ("Interviewer mindset", "🎯 Interviewer mindset")]
+    found = []
+    for key, title in labels:
+        m = re.search(re.escape(key), text, re.I)
+        if m:
+            found.append((m.start(), key, title))
+    found.sort()
+    if not found:
+        return [("🧠 Walkthrough", text)]
+    out = []
+    for i, (pos, key, title) in enumerate(found):
+        end = found[i + 1][0] if i + 1 < len(found) else len(text)
+        seg = text[pos:end]
+        seg = re.sub(r"^\W*" + re.escape(key) + r"\W*[:\-]?\s*", "", seg, flags=re.I).strip()
+        seg = seg.strip("*").strip()
+        if seg:
+            out.append((title, seg))
+    return out
+
+
+def generate_reveal_sections(prob):
     prompt = (
         f"You are coaching a candidate on the LeetCode problem '{prob['title']}' "
         f"({prob['difficulty']}; topics: {', '.join(prob.get('tags', [])) or 'n/a'}). "
         "Write a concise reveal in three clearly-labeled sections. No code dumps (short pseudocode ok), "
-        "no em dashes.\n\n"
-        "*Thought process*: how to reason from the problem to the optimal approach, step by step.\n"
-        "*Solution*: the optimal approach, the key insight, and time/space complexity.\n"
-        "*Interviewer mindset*: what the interviewer is really evaluating when they ask this, what a "
-        "strong answer demonstrates, the likely follow-up, and the most common mistake.")
-    body = _call_kiro(prompt)
-    return _sanitize(body) or "(Could not generate the reveal right now. Try reacting again in a minute.)"
+        "no em dashes. Use these exact section labels on their own lines:\n\n"
+        "Thought process: how to reason from the problem to the optimal approach, step by step.\n"
+        "Solution: the optimal approach, the key insight, and time/space complexity.\n"
+        "Interviewer mindset: what the interviewer is really evaluating, what a strong answer "
+        "demonstrates, the likely follow-up, and the most common mistake.")
+    raw = _sanitize(_call_kiro(prompt))
+    if not raw:
+        return [("🧠 Walkthrough", "(Could not generate the reveal right now. React again in a minute.)")]
+    return _split_sections(raw)
 
 
 def poll_reveals(scfg):
@@ -126,10 +153,15 @@ def poll_reveals(scfg):
             continue
         names = {x["name"] for x in (r.get("message", {}).get("reactions") or [])}
         if names & reveal_set:
-            reveal = generate_reveal(info)
+            sections = generate_reveal_sections(info)
+            # header reply, then one reply per section (easier to scan individually)
             requests.post(f"{API}/chat.postMessage", headers=_hdr(t),
                           json={"channel": ch, "thread_ts": ts,
-                                "text": f"🧠 *{info['title']} — walkthrough*\n\n{reveal}"}, timeout=15)
+                                "text": f"🧠 *{info['title']} — walkthrough* (revealed)"}, timeout=15)
+            for title, seg in sections:
+                requests.post(f"{API}/chat.postMessage", headers=_hdr(t),
+                              json={"channel": ch, "thread_ts": ts, "text": f"*{title}*\n{seg}"}, timeout=15)
+                time.sleep(0.6)   # preserve reply order
             info["revealed"] = True
             done.append(info["slug"])
     if done:
