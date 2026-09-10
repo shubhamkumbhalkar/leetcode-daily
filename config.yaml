@@ -9,8 +9,8 @@ slack_webhook_file: "~/.mcf-daily-improver/slack_webhook"
 # Dedicated LeetCode channel + emoji reveal. Reuses the same bot as opportunity-finder.
 # Invite the bot to a new private #leetcode channel; react with 💡 to reveal the walkthrough.
 slack_bot:
-  enabled: false
+  enabled: true
   token_file: "~/.opportunity-finder/slack_bot_token"
-  channel_id: ""
+  channel_id: "C0C0XHNEP0D"
   reveal_emoji: ["bulb", "brain", "eyes", "white_check_mark"]
   poll_interval: 60
