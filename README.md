@@ -36,3 +36,16 @@ python3 leetcode_daily.py --install-cron   # daily 8 AM America/Chicago
 - Progress in `data/delivered.json`; dataset cached in `data/problems.json` (both gitignored, not committed).
 - Reuses your existing Slack webhook. Lens uses the free local `kiro-cli` backend.
 - Dataset is community-maintained (a static snapshot); brand-new problems may not appear — fine for interview prep.
+
+## Scheduling (required)
+
+This tool does NOT post until a cron entry is added. Cloning/installing the workspace does not schedule it.
+
+Add to `crontab -e`:
+
+```
+CRON_TZ=America/Chicago
+15 8 * * * /local/home/shoobham/leetcode-daily/run_daily.sh
+```
+
+Gotcha: `CRON_TZ` is positional, so it applies to every entry below it until the next `CRON_TZ` line. Keep it after any UTC or other-timezone jobs so theirs are unaffected. Confirm the entry exists with `crontab -l`. The `run_daily.sh` wrapper also (re)starts the reveal poller if it is not already running.
